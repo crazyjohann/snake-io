@@ -1,0 +1,5 @@
+{
+  "name": "Retro Snake.io",
+  "description": "A real-time multiplayer snake game with a retro CRT aesthetic.",
+  "requestFramePermissions": []
+}
