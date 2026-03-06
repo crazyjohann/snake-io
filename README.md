@@ -58,6 +58,24 @@ npm start
 - **Shop:** Click the "Shop" button to browse and equip skins.
 - **Revive:** If you crash, you can spend 20 credits to revive.
 
+## Deployment
+
+This project is a full-stack application using WebSockets. For deployment, we recommend platforms that support persistent Node.js servers like **Render**, **Railway**, or **Heroku**.
+
+### Recommended Settings (e.g., on Render or Railway)
+
+- **Install Command:** `npm install`
+- **Build Command:** `npm run build`
+- **Start Command:** `npm start`
+- **Output Directory:** `dist`
+- **Environment Variables:**
+  - **Key:** `NODE_ENV` | **Value:** `production`
+  - **Key:** `PORT` | **Value:** `3000` (Most platforms like Render/Railway set this automatically)
+
+> **Note on API Keys:** This game does not require a Gemini API key to run. You only need the `NODE_ENV` variable set to `production` for the best performance.
+
+> **Note on Vercel:** While Vercel is excellent for static sites, it does not natively support long-lived WebSocket connections. For the multiplayer features to work correctly, use a platform that supports a persistent Node.js runtime.
+
 ## License
 
 MIT

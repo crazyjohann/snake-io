@@ -36,6 +36,12 @@ const SKINS = [
   { id: "crimson", name: "Crimson", color: "#ff0000", cost: 100 },
   { id: "gold", name: "Golden", color: "#ffd700", cost: 250 },
   { id: "rainbow", name: "Rainbow", color: "rainbow", cost: 500 },
+  { id: "emerald", name: "Emerald", color: "#50c878", cost: 150 },
+  { id: "obsidian", name: "Obsidian", color: "#3a3a3a", cost: 200 },
+  { id: "plasma", name: "Plasma", color: "#ff00ff", cost: 300 },
+  { id: "lava", name: "Lava", color: "#ff4500", cost: 400 },
+  { id: "ice", name: "Ice", color: "#00ffff", cost: 400 },
+  { id: "galaxy", name: "Galaxy", color: "rainbow", cost: 600 },
 ];
 
 export default function App() {
@@ -45,25 +51,60 @@ export default function App() {
   const [myId, setMyId] = useState<string | null>(null);
   const myIdRef = useRef<string | null>(null);
   const [playerName, setPlayerName] = useState("");
+  const [roomCode, setRoomCode] = useState("");
+  const [currentRoom, setCurrentRoom] = useState<string | null>(null);
   const [isJoined, setIsJoined] = useState(false);
   const [leaderboard, setLeaderboard] = useState<Player[]>([]);
   const [showShop, setShowShop] = useState(false);
   const [showRevive, setShowRevive] = useState(false);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [connectionStatus, setConnectionStatus] = useState<"connecting" | "open" | "closed" | "error">("connecting");
 
   const me = myId && gameState?.players[myId] ? gameState.players[myId] : null;
 
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowShop(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(`${protocol}//${window.location.host}`);
+    const host = window.location.host;
+    console.log(`Attempting WebSocket connection to: ${protocol}//${host}`);
+    
+    const socket = new WebSocket(`${protocol}//${host}`);
     socketRef.current = socket;
+
+    socket.onopen = () => {
+      console.log("WebSocket connection established successfully.");
+      setConnectionStatus("open");
+    };
+
+    socket.onerror = (error) => {
+      console.error("WebSocket error occurred:", error);
+      setConnectionStatus("error");
+    };
+
+    socket.onclose = (event) => {
+      console.warn(`WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason}`);
+      setConnectionStatus("closed");
+    };
 
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        console.log("Received message from server:", data.type);
         if (data.type === "init") {
           setMyId(data.id);
           myIdRef.current = data.id;
+        } else if (data.type === "room_joined") {
+          setCurrentRoom(data.roomId);
+          setIsJoined(true);
         } else if (data.type === "update") {
           setGameState(data.state);
           const players = Object.values(data.state.players) as Player[];
@@ -230,21 +271,6 @@ export default function App() {
             ctx.fill();
             ctx.stroke();
           }
-
-          // Draw Sword (Katana) from video
-          ctx.save();
-          ctx.translate(seg.x - cameraX, seg.y - cameraY);
-          ctx.rotate(player.angle + Math.PI / 4);
-          ctx.fillStyle = "#e0e0e0";
-          ctx.strokeStyle = "#333";
-          ctx.lineWidth = 1;
-          ctx.fillRect(10, -2, 25, 4); // Blade
-          ctx.strokeRect(10, -2, 25, 4);
-          ctx.fillStyle = "#8d6e63";
-          ctx.fillRect(5, -3, 5, 6); // Guard
-          ctx.fillStyle = "#3e2723";
-          ctx.fillRect(0, -2, 5, 4); // Handle
-          ctx.restore();
         }
       }
 
@@ -258,12 +284,17 @@ export default function App() {
     });
   }, [gameState, myId, leaderboard]);
 
-  const handleJoin = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleJoin = (type: "host" | "join" | "random") => {
     if (!playerName.trim()) return;
+    if (type === "join" && !roomCode.trim()) return;
+    
     if (socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: "join", name: playerName }));
-      setIsJoined(true);
+      socketRef.current.send(JSON.stringify({ 
+        type: "join", 
+        name: playerName,
+        joinType: type,
+        roomId: type === "join" ? roomCode.toUpperCase() : undefined
+      }));
     }
   };
 
@@ -298,7 +329,7 @@ export default function App() {
             >
               SNAKE.IO
             </motion.h1>
-            <form onSubmit={handleJoin} className="space-y-8">
+            <div className="space-y-6">
               <div className="relative">
                 <input
                   type="text"
@@ -309,13 +340,47 @@ export default function App() {
                   autoFocus
                 />
               </div>
-              <button
-                type="submit"
-                className="w-full bg-black text-white font-black py-4 px-8 rounded-xl hover:bg-gray-800 transition-all transform hover:scale-105 active:scale-95 shadow-xl"
-              >
-                START GAME
-              </button>
-            </form>
+
+              <div className="grid grid-cols-1 gap-4">
+                <button
+                  onClick={() => handleJoin("random")}
+                  disabled={connectionStatus !== "open" || !playerName.trim()}
+                  className="w-full bg-black text-white font-black py-4 px-8 rounded-xl hover:bg-gray-800 transition-all transform hover:scale-105 active:scale-95 shadow-xl disabled:opacity-50 disabled:cursor-not-allowed uppercase italic"
+                >
+                  Join Random Room
+                </button>
+                
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={roomCode}
+                    onChange={(e) => setRoomCode(e.target.value)}
+                    placeholder="ROOM CODE..."
+                    className="flex-1 bg-white/50 border-2 border-black/10 rounded-xl p-4 text-black outline-none focus:border-black transition-all text-center font-bold uppercase"
+                  />
+                  <button
+                    onClick={() => handleJoin("join")}
+                    disabled={connectionStatus !== "open" || !playerName.trim() || !roomCode.trim()}
+                    className="bg-black text-white font-black py-4 px-6 rounded-xl hover:bg-gray-800 transition-all disabled:opacity-50 uppercase italic"
+                  >
+                    Join
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => handleJoin("host")}
+                  disabled={connectionStatus !== "open" || !playerName.trim()}
+                  className="w-full bg-white border-2 border-black text-black font-black py-4 px-8 rounded-xl hover:bg-gray-50 transition-all transform hover:scale-105 active:scale-95 shadow-xl disabled:opacity-50 disabled:cursor-not-allowed uppercase italic"
+                >
+                  Host Private Room
+                </button>
+              </div>
+              {connectionStatus === "error" && (
+                <p className="text-red-500 text-xs mt-2 uppercase font-bold">
+                  WebSocket connection failed. Ensure you are not on Vercel.
+                </p>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -364,6 +429,21 @@ export default function App() {
                 <div className="text-xl font-black text-black">{me?.coins || 0} <span className="text-xs text-black/30">CREDITS</span></div>
               </div>
             </motion.div>
+
+            <motion.div 
+              initial={{ x: -50, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="bg-white/80 backdrop-blur-md p-4 rounded-2xl border border-black/5 flex items-center gap-4 shadow-lg"
+            >
+              <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-600">
+                <Users size={24} />
+              </div>
+              <div>
+                <div className="text-[10px] text-black/50 uppercase tracking-widest">Room Code</div>
+                <div className="text-xl font-black text-black">{currentRoom}</div>
+              </div>
+            </motion.div>
           </div>
 
           {/* Floating Leaderboard - Top Right */}
@@ -407,48 +487,81 @@ export default function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 z-[100] bg-white/90 backdrop-blur-xl flex items-center justify-center p-8"
+                onClick={() => setShowShop(false)}
+                className="absolute inset-0 z-[150] bg-black/40 backdrop-blur-md flex items-center justify-center p-4 md:p-8 cursor-pointer"
               >
-                <div className="max-w-2xl w-full bg-white rounded-3xl border border-black/5 p-8 relative shadow-2xl">
+                <motion.div 
+                  initial={{ scale: 0.9, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.9, opacity: 0 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="max-w-2xl w-full bg-white rounded-[2rem] border border-black/10 p-6 md:p-10 relative shadow-2xl cursor-default overflow-hidden"
+                >
                   <button 
                     onClick={() => setShowShop(false)}
-                    className="absolute top-6 right-6 text-black/50 hover:text-black"
+                    className="absolute top-6 right-6 p-2 rounded-full hover:bg-black/5 text-black/50 hover:text-black transition-colors z-10"
+                    aria-label="Close shop"
                   >
-                    <X size={24} />
+                    <X size={28} />
                   </button>
-                  <h2 className="text-3xl font-black mb-8 flex items-center gap-4 text-black">
-                    <ShoppingBag className="text-black" /> SKIN REPOSITORY
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {SKINS.map(skin => (
-                      <div 
-                        key={skin.id}
-                        className={`p-6 rounded-2xl border-2 transition-all cursor-pointer flex justify-between items-center ${
-                          me?.skin === skin.id ? "border-black bg-black/5" : "border-black/5 bg-black/5 hover:border-black/20"
-                        }`}
-                        onClick={() => buySkin(skin.id)}
-                      >
-                        <div className="flex items-center gap-4">
-                          <div 
-                            className="w-8 h-8 rounded-lg" 
-                            style={{ background: skin.color === "rainbow" ? "linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet)" : skin.color }}
-                          />
-                          <div>
-                            <div className="font-bold text-black">{skin.name}</div>
-                            <div className="text-[10px] text-black/50 uppercase tracking-widest">{skin.cost === 0 ? "Unlocked" : `${skin.cost} Credits`}</div>
+                  
+                  <div className="relative">
+                    <h2 className="text-3xl md:text-4xl font-black mb-2 flex items-center gap-4 text-black italic tracking-tighter">
+                      <ShoppingBag size={32} className="text-black" /> SKIN REPOSITORY
+                    </h2>
+                    <p className="text-[10px] text-black/40 uppercase tracking-[0.2em] mb-8 font-bold">Upgrade your visual signature</p>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                      {SKINS.map(skin => (
+                        <motion.div 
+                          key={skin.id}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          className={`p-5 rounded-2xl border-2 transition-all cursor-pointer flex justify-between items-center group ${
+                            me?.skin === skin.id 
+                              ? "border-black bg-black text-white" 
+                              : "border-black/5 bg-gray-50 hover:border-black/20"
+                          }`}
+                          onClick={() => buySkin(skin.id)}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div 
+                              className="w-10 h-10 rounded-xl shadow-inner border border-white/10" 
+                              style={{ background: skin.color === "rainbow" ? "linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #8b00ff)" : skin.color }}
+                            />
+                            <div>
+                              <div className={`font-black text-sm uppercase italic ${me?.skin === skin.id ? "text-white" : "text-black"}`}>{skin.name}</div>
+                              <div className={`text-[9px] uppercase tracking-widest font-bold ${me?.skin === skin.id ? "text-white/60" : "text-black/40"}`}>
+                                {skin.cost === 0 ? "Standard Issue" : `${skin.cost} Credits`}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                        {me?.skin === skin.id && <div className="text-black font-black text-[10px]">ACTIVE</div>}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-8 pt-8 border-t border-black/5 flex justify-between items-center">
-                    <div className="flex items-center gap-2 text-yellow-600 font-bold">
-                      <Coins size={20} /> {me?.coins || 0} AVAILABLE
+                          {me?.skin === skin.id ? (
+                            <div className="bg-white text-black px-2 py-1 rounded-md text-[8px] font-black tracking-tighter">ACTIVE</div>
+                          ) : (
+                            (me?.coins || 0) >= skin.cost && (
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity text-[8px] font-black text-black/40">EQUIP</div>
+                            )
+                          )}
+                        </motion.div>
+                      ))}
                     </div>
-                    <div className="text-[10px] text-black/30 uppercase tracking-widest">Select a skin to purchase/equip</div>
+                    
+                    <div className="mt-8 pt-8 border-t border-black/5 flex flex-col sm:flex-row justify-between items-center gap-4">
+                      <div className="flex items-center gap-3 bg-yellow-400/10 px-4 py-2 rounded-xl border border-yellow-400/20">
+                        <Coins size={20} className="text-yellow-600" /> 
+                        <span className="text-yellow-700 font-black text-lg">{me?.coins || 0}</span>
+                        <span className="text-[10px] text-yellow-700/60 font-bold uppercase tracking-widest">Available</span>
+                      </div>
+                      <button 
+                        onClick={() => setShowShop(false)}
+                        className="w-full sm:w-auto bg-black text-white px-8 py-3 rounded-xl font-black text-sm uppercase italic hover:bg-gray-800 transition-all active:scale-95"
+                      >
+                        Return to Mission
+                      </button>
+                    </div>
                   </div>
-                </div>
+                </motion.div>
               </motion.div>
             )}
           </AnimatePresence>
